@@ -18,6 +18,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getOrderById, updateOrder, getUsers } from "../../src/db";
 import { useAuth } from "../../src/auth-context";
+import { can } from "../../src/db";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -48,7 +49,7 @@ export default function OrderDetailsScreen() {
   const orderId = Number(params.id);
 
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canAssign = can(user, "canAssignParticipants");
 
   const allUsers = useMemo(() => getUsers(), []);
   const [participantsModalOpen, setParticipantsModalOpen] = useState(false);
@@ -186,7 +187,7 @@ export default function OrderDetailsScreen() {
     return d.toISOString();
   };
 
-  const onSave = () => {
+    const onSave = () => {
     if (!loaded) return;
 
     const t = title.trim();
@@ -201,18 +202,18 @@ export default function OrderDetailsScreen() {
       departAtISO: departTime ? buildSameDayISO(departTime) : null,
       officeArriveAtISO: officeArriveTime ? buildSameDayISO(officeArriveTime) : null,
 
-      kidsCount: toNumberOrNull(kidsCount) as any,
+      kidsCount: toNumberOrNull(kidsCount),
       kidsAge: kidsAge.trim() || null,
       birthdayName: birthdayName.trim() || null,
       address: address.trim() || null,
 
-      priceTotal: toNumberOrNull(priceTotal) as any,
-      prepayment: toNumberOrNull(prepayment) as any,
+      priceTotal: toNumberOrNull(priceTotal),
+      prepayment: toNumberOrNull(prepayment),
 
       description: description.trim() || null,
 
       // 👇 участники можно менять только админу
-      participants: isAdmin ? participants : undefined,
+      participants: canAssign ? participants : undefined,
     });
 
     Alert.alert("Сохранено", "Изменения применены.");
@@ -288,7 +289,7 @@ export default function OrderDetailsScreen() {
                   selectedUsers.map((u) => (
                     <View key={u!.id} style={styles.chip}>
                       <Text style={styles.chipText}>{u!.login}</Text>
-                      {isAdmin && (
+                      {canAssign  && (
                         <Pressable onPress={() => toggleParticipant(u!.id)}>
                           <Ionicons name="close" size={16} color="#111" />
                         </Pressable>
@@ -298,7 +299,7 @@ export default function OrderDetailsScreen() {
                 )}
               </View>
 
-              {isAdmin ? (
+              {canAssign  ? (
                 <Pressable style={styles.pickBtn} onPress={() => setParticipantsModalOpen(true)}>
                   <Ionicons name="people-outline" size={18} color="#111" />
                   <Text style={styles.pickBtnText}>Изменить участников</Text>

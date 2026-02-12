@@ -5,51 +5,44 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../src/auth-context";
 
 export default function ProfileScreen() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
 
-  // Адаптивные размеры
   const isSmall = width < 380;
-  const actionSize = isSmall ? 54 : 60; // кнопки поверх картинки
+  const actionSize = isSmall ? 54 : 60;
   const settingsSize = isSmall ? 40 : 42;
 
-  // Отступы под iPhone/Android в рамках адаптивности
-  const sideInset = Math.max(12, Math.min(18, Math.round(width * 0.04))); // левый отступ кнопок
+  const sideInset = Math.max(12, Math.min(18, Math.round(width * 0.04)));
   const gap = isSmall ? 12 : 14;
 
-  const user = {
-    fullName: "Имя Фамилия",
-    rank: "Капитан Анимации",
-    balance: 0,
-  };
+  const fullName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.login || "—";
+  const rank = user?.rank || "—";
+  const balance = Math.round((user?.coins ?? 0) * 100) / 100;
 
   return (
     <View style={styles.screen}>
-      {/* Верхняя карточка */}
       <View style={styles.topCard}>
         <View style={styles.avatar}>
           <Ionicons name="person" size={26} color="#0B1220" />
         </View>
 
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={styles.name} numberOfLines={1}>
-            {user.fullName}
-          </Text>
+          <Text style={styles.name} numberOfLines={1}>{fullName}</Text>
 
           <Text style={styles.sub} numberOfLines={1}>
-            Звание: <Text style={styles.subStrong}>{user.rank}</Text>
+            Звание: <Text style={styles.subStrong}>{rank}</Text>
           </Text>
 
           <View style={styles.balanceRow}>
             <View style={styles.pill}>
               <Ionicons name="sparkles" size={16} color="#0B1220" />
-              <Text style={styles.pillText}>Баланс: {user.balance}</Text>
+              <Text style={styles.pillText}>Баланс: {balance}</Text>
             </View>
           </View>
         </View>
 
-        {/* Кнопка настроек справа */}
         <Pressable
           onPress={() => {
             logout();
@@ -63,12 +56,24 @@ export default function ProfileScreen() {
         >
           <Ionicons name="log-out-outline" size={22} color="#0B1220" />
         </Pressable>
-
       </View>
 
-      {/* Область персонажа на всю ширину */}
+      {/* Быстрые кнопки */}
+      <View style={styles.quickRow}>
+        <Pressable style={styles.quickBtn} onPress={() => router.push("/profile-settings")}>
+          <Ionicons name="create-outline" size={18} color="#111" />
+          <Text style={styles.quickText}>Настройки профиля</Text>
+        </Pressable>
+
+        {user?.role === "admin" && (
+          <Pressable style={styles.quickBtn} onPress={() => router.push("/admin/users")}>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#111" />
+            <Text style={styles.quickText}>Права и роли</Text>
+          </Pressable>
+        )}
+      </View>
+
       <View style={styles.characterSection}>
-        {/* Картинка персонажа */}
         <View style={styles.characterImage}>
           <Image
             source={require("../../assets/avatars/character.png")}
@@ -77,34 +82,15 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* Кнопки поверх картинки, по левому краю, центрированы по вертикали */}
         <View
           pointerEvents="box-none"
           style={[
             styles.overlayLeft,
-            {
-              left: sideInset,
-              gap,
-            },
+            { left: sideInset, gap },
           ]}
         >
-          <IconCircle
-            size={actionSize}
-            icon="bag-handle-outline"
-            onPress={() => {
-              // router.push("/shop");
-            }}
-            label="Магазин"
-          />
-
-          <IconCircle
-            size={actionSize}
-            icon="stats-chart-outline"
-            onPress={() => {
-              // router.push("/stats");
-            }}
-            label="Статистика"
-          />
+          <IconCircle size={actionSize} icon="bag-handle-outline" onPress={() => {}} label="Магазин" />
+          <IconCircle size={actionSize} icon="stats-chart-outline" onPress={() => {}} label="Статистика" />
 
           <IconCircle
             size={actionSize}
@@ -142,14 +128,8 @@ function IconCircle(props: {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    padding: 16,
-    gap: 14,
-    backgroundColor: "#F5F7FB",
-  },
+  screen: { flex: 1, padding: 16, gap: 14, backgroundColor: "#F5F7FB" },
 
-  // Top card
   topCard: {
     flexDirection: "row",
     gap: 12,
@@ -171,19 +151,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#EEF2FF",
   },
-  name: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#0B1220",
-  },
-  sub: {
-    color: "rgba(11, 18, 32, 0.7)",
-    fontWeight: "600",
-  },
-  subStrong: {
-    color: "#0B1220",
-    fontWeight: "800",
-  },
+  name: { fontSize: 16, fontWeight: "900", color: "#0B1220" },
+  sub: { color: "rgba(11, 18, 32, 0.7)", fontWeight: "600" },
+  subStrong: { color: "#0B1220", fontWeight: "800" },
   balanceRow: { flexDirection: "row", marginTop: 2 },
   pill: {
     flexDirection: "row",
@@ -194,17 +164,24 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#ECFEFF",
   },
-  pillText: {
-    fontWeight: "800",
-    color: "#0B1220",
-  },
-  topIconBtn: {
+  pillText: { fontWeight: "800", color: "#0B1220" },
+  topIconBtn: { alignItems: "center", justifyContent: "center", backgroundColor: "#F8FAFC" },
+
+  quickRow: { flexDirection: "row", gap: 10 },
+  quickBtn: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F8FAFC",
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#eee",
+    backgroundColor: "#fff",
   },
+  quickText: { fontWeight: "900", color: "#111" },
 
-  // Character full-width area
   characterSection: {
     flex: 1,
     position: "relative",
@@ -217,25 +194,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  characterImage: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  characterAvatar: {
-    width: "100%",
-    height: "100%",
-  },
+  characterImage: { flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center" },
+  characterAvatar: { width: "100%", height: "100%" },
 
-  // Overlay buttons
-  overlayLeft: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  overlayLeft: { position: "absolute", top: 0, bottom: 0, justifyContent: "center", alignItems: "center" },
 
   circleBtn: {
     alignItems: "center",
@@ -247,6 +209,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-
   pressed: { opacity: 0.7 },
 });

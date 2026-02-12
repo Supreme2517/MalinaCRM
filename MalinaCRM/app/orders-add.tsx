@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import {
   View,
@@ -15,9 +15,10 @@ import {
   Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { createOrder, getUsers } from "../src/db";
 import { useAuth } from "../src/auth-context";
+import { can } from "../src/db";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -40,7 +41,24 @@ type PickerTarget = "orderDate" | "orderTime" | "departTime" | "officeArriveTime
 export default function OrdersAdd() {
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+
+  const canAssign = can(user, "canAssignParticipants");
+  const canCreate = can(user, "canCreateOrders");
+
+  // Если нет пользователя — на логин
+  if (!user) return <Redirect href="/auth/login" />;
+
+  // Нельзя создавать — показываем алерт ОДИН раз и уходим назад
+  useEffect(() => {
+    if (!canCreate) {
+      Alert.alert("Нет прав", "У тебя нет права создавать заказы.", [
+        { text: "Ок", onPress: () => router.back() },
+      ]);
+    }
+  }, [canCreate, router]);
+
+  // Рендерим заглушку, пока уходим назад
+  if (!canCreate) return <View style={{ flex: 1, backgroundColor: "#F5F7FB" }} />;
 
   const allUsers = useMemo(() => getUsers(), []);
 
@@ -106,7 +124,6 @@ export default function OrdersAdd() {
       setIosModalVisible(true);
       return;
     }
-
     setShowAndroidPicker(true);
   };
 
@@ -151,7 +168,7 @@ export default function OrdersAdd() {
       priceTotal: toNumberOrNull(priceTotal),
       prepayment: toNumberOrNull(prepayment),
 
-      participants: isAdmin ? participants : [], // ⛔ только админ назначает
+      participants: canAssign ? participants : [], // только админ/разрешённые назначают
     });
 
     Alert.alert("Готово", "Заказ добавлен.");
@@ -211,7 +228,7 @@ export default function OrdersAdd() {
             {/* УЧАСТНИКИ */}
             <Text style={styles.label}>Участники</Text>
 
-            {isAdmin ? (
+            {canAssign ? (
               <>
                 <View style={styles.chipsRow}>
                   {participants.length === 0 ? (
