@@ -1,8 +1,27 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet, Pressable, useWindowDimensions, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/auth-context";
+
+const AVATAR_IMAGES: Record<string, any> = {
+  default1: require("../../assets/avatars/shop/avatar1.png"),
+  default2: require("../../assets/avatars/shop/avatar2.png"),
+  default3: require("../../assets/avatars/shop/avatar3.png"),
+  default4: require("../../assets/avatars/shop/avatar4.png"),
+  rare_1: require("../../assets/avatars/shop/avatar5.png"),
+  rare_2: require("../../assets/avatars/shop/avatar6.png"),
+  rare_3: require("../../assets/avatars/shop/avatar7.png"),
+  rare_4: require("../../assets/avatars/shop/avatar8.png"),
+  myth_1: require("../../assets/avatars/shop/avatar9.png"),
+  myth_2: require("../../assets/avatars/shop/avatar10.png"),
+  myth_3: require("../../assets/avatars/shop/avatar11.png"),
+  myth_4: require("../../assets/avatars/shop/avatar12.png"),
+  legend_1: require("../../assets/avatars/shop/avatar13.png"),
+  legend_2: require("../../assets/avatars/shop/avatar14.png"),
+  legend_3: require("../../assets/avatars/shop/avatar15.png"),
+  legend_4: require("../../assets/avatars/shop/avatar16.png"),
+};
 
 export default function ProfileScreen() {
   const { logout, user } = useAuth();
@@ -20,6 +39,11 @@ export default function ProfileScreen() {
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.login || "—";
   const rank = user?.rank || "—";
   const balance = Math.round((user?.coins ?? 0) * 100) / 100;
+
+  const activeAvatarSource = useMemo(() => {
+    const key = user?.avatarKey || "default";
+    return AVATAR_IMAGES[key] ?? AVATAR_IMAGES["default"];
+  }, [user?.avatarKey]);
 
   return (
     <View style={styles.screen}>
@@ -75,8 +99,9 @@ export default function ProfileScreen() {
 
       <View style={styles.characterSection}>
         <View style={styles.characterImage}>
+          {/* ✅ тут показываем выбранный аватар */}
           <Image
-            source={require("../../assets/avatars/character.png")}
+            source={activeAvatarSource}
             style={styles.characterAvatar}
             resizeMode="contain"
           />
@@ -89,7 +114,13 @@ export default function ProfileScreen() {
             { left: sideInset, gap },
           ]}
         >
-          <IconCircle size={actionSize} icon="bag-handle-outline" onPress={() => {}} label="Магазин" />
+          <IconCircle
+            size={actionSize}
+            icon="bag-handle-outline"
+            onPress={() => router.push("/shop")}
+            label="Магазин"
+          />
+
           <IconCircle size={actionSize} icon="stats-chart-outline" onPress={() => {}} label="Статистика" />
 
           <IconCircle

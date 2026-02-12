@@ -22,9 +22,20 @@ export default function TabLayout() {
 
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: any = "ellipse-outline";
-          if (route.name === "orders") iconName = focused ? "list" : "list-outline";
-          if (route.name === "index") iconName = focused ? "person-circle" : "person-circle-outline";
-          if (route.name === "future") iconName = focused ? "sparkles" : "sparkles-outline";
+
+          if (route.name === "orders")
+            iconName = focused ? "list" : "list-outline";
+
+          if (route.name === "index")
+            iconName = focused
+              ? "person-circle"
+              : "person-circle-outline";
+
+          if (route.name === "future")
+            iconName = focused
+              ? "sparkles"
+              : "sparkles-outline";
+
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}
@@ -41,8 +52,15 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen name="index" options={{ title: "Профиль", headerTitle: "Профиль" }} />
-      <Tabs.Screen name="future" options={{ title: "Скоро", headerTitle: "Скоро" }} />
+      <Tabs.Screen
+        name="index"
+        options={{ title: "Профиль", headerTitle: "Профиль" }}
+      />
+
+      <Tabs.Screen
+        name="future"
+        options={{ title: "Скоро", headerTitle: "Скоро" }}
+      />
     </Tabs>
   );
 }

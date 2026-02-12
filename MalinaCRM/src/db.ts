@@ -38,6 +38,10 @@ export type UserProfile = {
   telegram: string | null;
   rank: string | null; // звание
   coins: number; // MalinaCoins
+
+  // shop
+  avatarKey: string | null;
+  ownedAvatars: string; // JSON string
 };
 
 export type User = {
@@ -55,6 +59,10 @@ export type User = {
   telegram: string | null;
   rank: string | null;
   coins: number;
+
+  // shop
+  avatarKey: string | null;
+  ownedAvatars: string | null; // TEXT(JSON)
 
   // permissions
   canAssignParticipants: 0 | 1;
@@ -132,7 +140,14 @@ function defaultPermsByRole(role: UserRole): UserPermissions {
   };
 }
 
-let __dbInited = false;
+function parseOwnedAvatars(raw: any): string[] {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
 
 export function initDb() {
   // USERS base
@@ -155,6 +170,10 @@ export function initDb() {
   tryAlter(`ALTER TABLE users ADD COLUMN rank TEXT;`);
   tryAlter(`ALTER TABLE users ADD COLUMN coins REAL NOT NULL DEFAULT 0;`);
 
+  // Migrations: shop fields
+  tryAlter(`ALTER TABLE users ADD COLUMN avatarKey TEXT;`);
+  tryAlter(`ALTER TABLE users ADD COLUMN ownedAvatars TEXT NOT NULL DEFAULT '[]';`);
+
   // Migrations: permissions flags (0/1)
   tryAlter(`ALTER TABLE users ADD COLUMN canAssignParticipants INTEGER NOT NULL DEFAULT 0;`);
   tryAlter(`ALTER TABLE users ADD COLUMN canEditRanks INTEGER NOT NULL DEFAULT 0;`);
@@ -162,7 +181,7 @@ export function initDb() {
   tryAlter(`ALTER TABLE users ADD COLUMN canManageFinance INTEGER NOT NULL DEFAULT 0;`);
   tryAlter(`ALTER TABLE users ADD COLUMN canTopUpCoins INTEGER NOT NULL DEFAULT 0;`);
 
-  // Seed users (если уже есть — не добавится)
+  // Seed users
   db.execSync(`
     INSERT OR IGNORE INTO users (login, password, role) VALUES
     ('Malina', '0000', 'admin'),
@@ -170,14 +189,14 @@ export function initDb() {
     ('Malina2', '0000', 'user');
   `);
 
-  // Нормализуем роли и права по ролям (чтобы Malina точно был админом)
+  // Malina точно админ
   run(
     `UPDATE users SET role = 'admin'
      WHERE login = 'Malina'`,
     []
   );
 
-  // Проставляем дефолтные права тем, у кого они все 0 (новая миграция)
+  // Проставляем дефолтные права тем, у кого они все 0
   const users = db.getAllSync<User>(`SELECT * FROM users`);
   for (const u of users) {
     const allZero =
@@ -201,6 +220,25 @@ export function initDb() {
           p.canTopUpCoins ? 1 : 0,
           u.id,
         ]
+      );
+    }
+
+    // ✅ Магазин: у каждого должен быть default в ownedAvatars и активный avatarKey
+    const owned = parseOwnedAvatars(u.ownedAvatars);
+    let changed = false;
+
+    if (!owned.includes("default")) {
+      owned.push("default");
+      changed = true;
+    }
+
+    const nextAvatarKey = u.avatarKey || "default";
+    if (u.avatarKey !== nextAvatarKey) changed = true;
+
+    if (changed) {
+      run(
+        `UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`,
+        [JSON.stringify(owned), nextAvatarKey, u.id]
       );
     }
   }
@@ -230,18 +268,12 @@ export function initDb() {
   `);
 }
 
-function initDbOnce() {
-  if (__dbInited) return;
-  initDb();
-  __dbInited = true;
-}
-
 /* =========================
    HELPERS
 ========================= */
 export function can(user: User | null | undefined, perm: keyof UserPermissions) {
   if (!user) return false;
-  if (user.role === "admin") return true; // админ всегда всё может
+  if (user.role === "admin") return true;
   const map: Record<keyof UserPermissions, keyof User> = {
     canAssignParticipants: "canAssignParticipants",
     canEditRanks: "canEditRanks",
@@ -266,18 +298,18 @@ function parseParticipants(raw: any): number[] {
    USERS
 ========================= */
 export function getUsers(): User[] {
-  initDbOnce();
+  initDb();
   return db.getAllSync<User>("SELECT * FROM users ORDER BY id");
 }
 
 export function getUserById(id: number): User | null {
-  initDbOnce();
+  initDb();
   const rows = db.getAllSync<User>(`SELECT * FROM users WHERE id = ? LIMIT 1`, [id]);
   return rows[0] ?? null;
 }
 
 export function checkLogin(login: string, password: string): User | null {
-  initDbOnce();
+  initDb();
   const res = db.getAllSync<User>(
     "SELECT * FROM users WHERE login = ? AND password = ? LIMIT 1",
     [login, password]
@@ -286,14 +318,14 @@ export function checkLogin(login: string, password: string): User | null {
 }
 
 export function usersByIds(ids: number[]): User[] {
-  initDbOnce();
+  initDb();
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(",");
   return db.getAllSync<User>(`SELECT * FROM users WHERE id IN (${placeholders})`, ids);
 }
 
 export function updateUserRole(userId: number, role: UserRole) {
-  initDbOnce();
+  initDb();
   const p = defaultPermsByRole(role);
   run(
     `UPDATE users
@@ -317,7 +349,7 @@ export function updateUserRole(userId: number, role: UserRole) {
 }
 
 export function updateUserPermissions(userId: number, perms: Partial<UserPermissions>) {
-  initDbOnce();
+  initDb();
   const entries = Object.entries(perms).filter(([, v]) => v !== undefined);
   if (!entries.length) return;
 
@@ -328,7 +360,7 @@ export function updateUserPermissions(userId: number, perms: Partial<UserPermiss
 }
 
 export function updateUserProfile(userId: number, profile: Partial<UserProfile>) {
-  initDbOnce();
+  initDb();
   const entries = Object.entries(profile).filter(([, v]) => v !== undefined);
   if (!entries.length) return;
 
@@ -339,8 +371,65 @@ export function updateUserProfile(userId: number, profile: Partial<UserProfile>)
 }
 
 export function addUserCoins(userId: number, delta: number) {
-  initDbOnce();
+  initDb();
   run(`UPDATE users SET coins = COALESCE(coins,0) + ? WHERE id = ?`, [delta, userId]);
+}
+
+/* =========================
+   AVATAR SHOP
+========================= */
+export function getOwnedAvatars(userId: number): string[] {
+  const u = getUserById(userId);
+  if (!u) return [];
+  return parseOwnedAvatars(u.ownedAvatars);
+}
+
+export function setActiveAvatar(userId: number, avatarKey: string) {
+  initDb();
+  run(`UPDATE users SET avatarKey = ? WHERE id = ?`, [avatarKey, userId]);
+}
+
+export function buyAvatarIfPossible(
+  userId: number,
+  avatarKey: string,
+  price: number
+): { ok: boolean; reason?: "not_found" | "already_owned" | "not_enough" } {
+  initDb();
+  const u = getUserById(userId);
+  if (!u) return { ok: false, reason: "not_found" };
+
+  const owned = parseOwnedAvatars(u.ownedAvatars);
+
+  // уже куплен — просто активируем
+  if (owned.includes(avatarKey)) {
+    setActiveAvatar(userId, avatarKey);
+    return { ok: true, reason: "already_owned" };
+  }
+
+  // price=0: добавляем в owned без списания
+  if (price <= 0) {
+    const nextOwned = [...owned, avatarKey];
+    run(
+      `UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`,
+      [JSON.stringify(nextOwned), avatarKey, userId]
+    );
+    return { ok: true };
+  }
+
+  const coins = Number(u.coins ?? 0);
+  if (coins < price) return { ok: false, reason: "not_enough" };
+
+  const nextOwned = [...owned, avatarKey];
+  run(
+    `UPDATE users
+     SET coins = COALESCE(coins,0) - ?,
+         ownedAvatars = ?,
+         avatarKey = ?
+     WHERE id = ?`,
+    [price, JSON.stringify(nextOwned), avatarKey, userId]
+  );
+
+  return { ok: true };
 }
 
 /* =========================
@@ -371,7 +460,7 @@ export function createOrder(input: {
   description?: string | null;
   costume?: string | null;
 }) {
-  initDbOnce();
+  initDb();
 
   run(
     `INSERT INTO orders (
@@ -400,7 +489,7 @@ export function createOrder(input: {
 }
 
 export function listOrdersByMonth(year: number, month0: number): Order[] {
-  initDbOnce();
+  initDb();
 
   const start = new Date(year, month0, 1, 0, 0, 0, 0);
   const end = new Date(year, month0 + 1, 1, 0, 0, 0, 0);
@@ -416,7 +505,7 @@ export function listOrdersByMonth(year: number, month0: number): Order[] {
 }
 
 export function getOrderById(id: number): Order | null {
-  initDbOnce();
+  initDb();
   const rows = db.getAllSync<any>(`SELECT * FROM orders WHERE id = ? LIMIT 1`, [id]);
   const o = rows?.[0];
   if (!o) return null;
@@ -424,7 +513,7 @@ export function getOrderById(id: number): Order | null {
 }
 
 export function updateOrder(id: number, patch: Partial<Omit<Order, "id" | "createdAtISO">>) {
-  initDbOnce();
+  initDb();
 
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
   if (!entries.length) return;
@@ -441,6 +530,6 @@ export function updateOrder(id: number, patch: Partial<Omit<Order, "id" | "creat
 }
 
 export function deleteOrder(id: number) {
-  initDbOnce();
+  initDb();
   run("DELETE FROM orders WHERE id = ?", [id]);
 }
