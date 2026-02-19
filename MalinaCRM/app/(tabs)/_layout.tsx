@@ -58,8 +58,8 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="future"
-        options={{ title: "Скоро", headerTitle: "Скоро" }}
+        name="map"
+        options={{ title: "Карта", headerTitle: "Карта" }}
       />
     </Tabs>
   );

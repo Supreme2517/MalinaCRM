@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import {
   View,
@@ -15,7 +15,7 @@ import {
   Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Redirect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { createOrder, getUsers } from "../src/db";
 import { useAuth } from "../src/auth-context";
 import { can } from "../src/db";
@@ -45,21 +45,6 @@ export default function OrdersAdd() {
   const canAssign = can(user, "canAssignParticipants");
   const canCreate = can(user, "canCreateOrders");
 
-  // Если нет пользователя — на логин
-  if (!user) return <Redirect href="/auth/login" />;
-
-  // Нельзя создавать — показываем алерт ОДИН раз и уходим назад
-  useEffect(() => {
-    if (!canCreate) {
-      Alert.alert("Нет прав", "У тебя нет права создавать заказы.", [
-        { text: "Ок", onPress: () => router.back() },
-      ]);
-    }
-  }, [canCreate, router]);
-
-  // Рендерим заглушку, пока уходим назад
-  if (!canCreate) return <View style={{ flex: 1, backgroundColor: "#F5F7FB" }} />;
-
   const allUsers = useMemo(() => getUsers(), []);
 
   const [title, setTitle] = useState("");
@@ -74,6 +59,11 @@ export default function OrdersAdd() {
   const [birthdayName, setBirthdayName] = useState("");
   const [costume, setCostume] = useState("");
   const [address, setAddress] = useState("");
+
+  // ✅ координаты
+  const [latText, setLatText] = useState("");
+  const [lngText, setLngText] = useState("");
+
   const [priceTotal, setPriceTotal] = useState("");
   const [prepayment, setPrepayment] = useState("");
 
@@ -91,6 +81,11 @@ export default function OrdersAdd() {
   // iOS modal
   const [iosModalVisible, setIosModalVisible] = useState(false);
   const [iosTempValue, setIosTempValue] = useState<Date>(new Date());
+
+  if (!canCreate) {
+    Alert.alert("Нет прав", "У тебя нет права создавать заказы.");
+    return null;
+  }
 
   const currentValue = useMemo(() => {
     if (pickerTarget === "orderDate") return orderDate;
@@ -152,6 +147,20 @@ export default function OrdersAdd() {
     const t = title.trim();
     if (!t) return Alert.alert("Ошибка", "Заполни название заказа.");
 
+    const lat = toNumberOrNull(latText);
+    const lng = toNumberOrNull(lngText);
+
+    // ✅ либо оба заполнены, либо оба пустые
+    const hasAnyCoord = (latText.trim().length > 0) || (lngText.trim().length > 0);
+    if (hasAnyCoord) {
+      if (lat === null || lng === null) {
+        return Alert.alert("Ошибка", "Координаты должны быть числами (lat и lng).");
+      }
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return Alert.alert("Ошибка", "Координаты вне диапазона. lat: -90..90, lng: -180..180");
+      }
+    }
+
     createOrder({
       title: t,
       dateYMD: toYMD(orderDate),
@@ -165,10 +174,13 @@ export default function OrdersAdd() {
       costume: costume.trim() || null,
       address: address.trim() || null,
 
+      lat: hasAnyCoord ? lat : null,
+      lng: hasAnyCoord ? lng : null,
+
       priceTotal: toNumberOrNull(priceTotal),
       prepayment: toNumberOrNull(prepayment),
 
-      participants: canAssign ? participants : [], // только админ/разрешённые назначают
+      participants: canAssign ? participants : [],
     });
 
     Alert.alert("Готово", "Заказ добавлен.");
@@ -227,7 +239,6 @@ export default function OrdersAdd() {
 
             {/* УЧАСТНИКИ */}
             <Text style={styles.label}>Участники</Text>
-
             {canAssign ? (
               <>
                 <View style={styles.chipsRow}>
@@ -280,6 +291,25 @@ export default function OrdersAdd() {
             <Text style={styles.label}>Адрес</Text>
             <TextInput value={address} onChangeText={setAddress} placeholder="Город, улица, дом" style={styles.input} />
 
+            {/* ✅ Координаты */}
+            <Text style={styles.label}>Координаты (если известны)</Text>
+            <View style={styles.row2}>
+              <TextInput
+                value={latText}
+                onChangeText={setLatText}
+                placeholder="lat (например 55.7539)"
+                keyboardType="numeric"
+                style={[styles.input, { flex: 1 }]}
+              />
+              <TextInput
+                value={lngText}
+                onChangeText={setLngText}
+                placeholder="lng (например 37.6208)"
+                keyboardType="numeric"
+                style={[styles.input, { flex: 1 }]}
+              />
+            </View>
+
             <Text style={styles.label}>Стоимость заказа</Text>
             <TextInput value={priceTotal} onChangeText={setPriceTotal} placeholder="Например: 25000" keyboardType="numeric" style={styles.input} />
 
@@ -320,7 +350,7 @@ export default function OrdersAdd() {
             </Modal>
           )}
 
-          {/* Participants bottom sheet */}
+          {/* Participants sheet */}
           <Modal
             visible={participantsModalOpen}
             transparent
@@ -406,7 +436,6 @@ const styles = StyleSheet.create({
 
   row2: { flexDirection: "row", gap: 10 },
 
-  // Chips
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     flexDirection: "row",
@@ -454,7 +483,6 @@ const styles = StyleSheet.create({
   },
   secondaryText: { color: "#111", fontWeight: "900" },
 
-  // iOS date/time modal styles
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)" },
   modalSheet: {
     backgroundColor: "#fff",
@@ -477,7 +505,6 @@ const styles = StyleSheet.create({
   modalHeaderText: { fontSize: 16, color: "#111" },
   modalTitle: { fontSize: 14, color: "#666", fontWeight: "800" },
 
-  // Participants sheet
   sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)" },
   sheet: {
     backgroundColor: "#fff",

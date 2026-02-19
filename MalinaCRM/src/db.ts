@@ -36,12 +36,12 @@ export type UserProfile = {
   phone: string | null;
   email: string | null;
   telegram: string | null;
-  rank: string | null; // звание
-  coins: number; // MalinaCoins
+  rank: string | null;
+  coins: number;
 
   // shop
   avatarKey: string | null;
-  ownedAvatars: string; // JSON string
+  ownedAvatars: string;
 };
 
 export type User = {
@@ -62,7 +62,7 @@ export type User = {
 
   // shop
   avatarKey: string | null;
-  ownedAvatars: string | null; // TEXT(JSON)
+  ownedAvatars: string | null;
 
   // permissions
   canAssignParticipants: 0 | 1;
@@ -85,10 +85,14 @@ export type Order = {
 
   address: string | null;
 
+  // ✅ координаты (ручной ввод)
+  lat: number | null;
+  lng: number | null;
+
   priceTotal: number | null;
   prepayment: number | null;
 
-  participants: number[]; // TEXT(JSON) in DB
+  participants: number[];
   description: string | null;
   costume: string | null;
   createdAtISO: string;
@@ -149,6 +153,15 @@ function parseOwnedAvatars(raw: any): string[] {
   }
 }
 
+function parseParticipants(raw: any): number[] {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr.map(Number).filter(Number.isFinite) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function initDb() {
   // USERS base
   db.execSync(`
@@ -190,11 +203,7 @@ export function initDb() {
   `);
 
   // Malina точно админ
-  run(
-    `UPDATE users SET role = 'admin'
-     WHERE login = 'Malina'`,
-    []
-  );
+  run(`UPDATE users SET role = 'admin' WHERE login = 'Malina'`, []);
 
   // Проставляем дефолтные права тем, у кого они все 0
   const users = db.getAllSync<User>(`SELECT * FROM users`);
@@ -223,7 +232,7 @@ export function initDb() {
       );
     }
 
-    // ✅ Магазин: у каждого должен быть default в ownedAvatars и активный avatarKey
+    // shop defaults
     const owned = parseOwnedAvatars(u.ownedAvatars);
     let changed = false;
 
@@ -236,10 +245,11 @@ export function initDb() {
     if (u.avatarKey !== nextAvatarKey) changed = true;
 
     if (changed) {
-      run(
-        `UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`,
-        [JSON.stringify(owned), nextAvatarKey, u.id]
-      );
+      run(`UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`, [
+        JSON.stringify(owned),
+        nextAvatarKey,
+        u.id,
+      ]);
     }
   }
 
@@ -257,6 +267,9 @@ export function initDb() {
       birthdayName TEXT,
       address TEXT,
 
+      lat REAL,
+      lng REAL,
+
       priceTotal REAL,
       prepayment REAL,
 
@@ -266,6 +279,10 @@ export function initDb() {
       createdAtISO TEXT NOT NULL
     );
   `);
+
+  // ✅ Миграции для старых БД
+  tryAlter(`ALTER TABLE orders ADD COLUMN lat REAL;`);
+  tryAlter(`ALTER TABLE orders ADD COLUMN lng REAL;`);
 }
 
 /* =========================
@@ -283,15 +300,6 @@ export function can(user: User | null | undefined, perm: keyof UserPermissions) 
   };
   const key = map[perm];
   return (user[key] as any) === 1;
-}
-
-function parseParticipants(raw: any): number[] {
-  try {
-    const arr = JSON.parse(raw || "[]");
-    return Array.isArray(arr) ? arr.map(Number).filter(Number.isFinite) : [];
-  } catch {
-    return [];
-  }
 }
 
 /* =========================
@@ -400,19 +408,18 @@ export function buyAvatarIfPossible(
 
   const owned = parseOwnedAvatars(u.ownedAvatars);
 
-  // уже куплен — просто активируем
   if (owned.includes(avatarKey)) {
     setActiveAvatar(userId, avatarKey);
     return { ok: true, reason: "already_owned" };
   }
 
-  // price=0: добавляем в owned без списания
   if (price <= 0) {
     const nextOwned = [...owned, avatarKey];
-    run(
-      `UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`,
-      [JSON.stringify(nextOwned), avatarKey, userId]
-    );
+    run(`UPDATE users SET ownedAvatars = ?, avatarKey = ? WHERE id = ?`, [
+      JSON.stringify(nextOwned),
+      avatarKey,
+      userId,
+    ]);
     return { ok: true };
   }
 
@@ -453,6 +460,9 @@ export function createOrder(input: {
   birthdayName?: string | null;
   address?: string | null;
 
+  lat?: number | null;
+  lng?: number | null;
+
   priceTotal?: number | null;
   prepayment?: number | null;
 
@@ -466,9 +476,10 @@ export function createOrder(input: {
     `INSERT INTO orders (
       title, startAtISO, departAtISO, officeArriveAtISO,
       kidsCount, kidsAge, birthdayName, address,
+      lat, lng,
       priceTotal, prepayment,
       participants, description, costume, createdAtISO
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.title,
       toISO(input.dateYMD, input.timeHM),
@@ -478,6 +489,8 @@ export function createOrder(input: {
       input.kidsAge ?? null,
       input.birthdayName ?? null,
       input.address ?? null,
+      input.lat ?? null,
+      input.lng ?? null,
       input.priceTotal ?? null,
       input.prepayment ?? null,
       JSON.stringify(input.participants ?? []),
@@ -504,6 +517,12 @@ export function listOrdersByMonth(year: number, month0: number): Order[] {
   return rows.map((o) => ({ ...o, participants: parseParticipants(o.participants) })) as Order[];
 }
 
+export function listAllOrders(): Order[] {
+  initDb();
+  const rows = db.getAllSync<any>(`SELECT * FROM orders ORDER BY startAtISO ASC`);
+  return rows.map((o) => ({ ...o, participants: parseParticipants(o.participants) })) as Order[];
+}
+
 export function getOrderById(id: number): Order | null {
   initDb();
   const rows = db.getAllSync<any>(`SELECT * FROM orders WHERE id = ? LIMIT 1`, [id]);
@@ -527,6 +546,11 @@ export function updateOrder(id: number, patch: Partial<Omit<Order, "id" | "creat
   const values = normalized.map(([, v]) => v);
 
   run(`UPDATE orders SET ${setSql} WHERE id = ?`, [...values, id]);
+}
+
+export function updateOrderLocation(orderId: number, lat: number, lng: number) {
+  initDb();
+  run(`UPDATE orders SET lat = ?, lng = ? WHERE id = ?`, [lat, lng, orderId]);
 }
 
 export function deleteOrder(id: number) {
